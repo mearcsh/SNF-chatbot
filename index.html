@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>My SNF Chatbot</title>
+</head>
+<body>
+  <h1>Welcome to My Chatbot</h1>
+  <div id="chatlog"></div>
+  <input id="userInput" placeholder="Type a message...">
+  <button onclick="send()">Send</button>
+
+  <script>
+    function send() {
+      const input = document.getElementById("userInput").value;
+      const log = document.getElementById("chatlog");
+      log.innerHTML += "<p><strong>You:</strong> " + input + "</p>";
+      log.innerHTML += "<p><strong>Bot:</strong> (This is where the reply will go)</p>";
+      document.getElementById("userInput").value = "";
+    }
+  </script>
+</body>
+</html>
