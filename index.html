@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <title>SNF Documentation Review Support Tool</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Make sure style.css is in the SAME folder as this file -->
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -13,10 +14,50 @@
       <p class="subtitle">Demo chat UI (placeholder bot replies)</p>
     </header>
 
-    <section id="chatlog" class="chatlog" aria-live="polite" aria-label="Chat transcript">
-      <!-- Messages will be appended here -->
-    </section>
+    <section id="chatlog" class="chatlog" aria-live="polite" aria-label="Chat transcript"></section>
 
     <form id="chatForm" class="composer" autocomplete="off">
-      <input
-        id="userInput"
+      <input id="userInput" class="input" type="text" placeholder="Type a message..." aria-label="Your message" />
+      <button class="send" type="submit" aria-label="Send message">Send</button>
+    </form>
+  </main>
+
+  <script>
+    const chatlog = document.getElementById('chatlog');
+    const form = document.getElementById('chatForm');
+    const input = document.getElementById('userInput');
+
+    function escapeHtml(str) {
+      return str.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+    }
+    function appendMessage(role, text) {
+      const row = document.createElement('div');
+      row.className = `row ${role === 'user' ? 'right' : 'left'}`;
+      const bubble = document.createElement('div');
+      bubble.className = `bubble ${role}`;
+      bubble.innerHTML = `<div class="label">${role === 'user' ? 'You' : 'Bot'}</div><div class="text">${escapeHtml(text)}</div>`;
+      row.appendChild(bubble);
+      chatlog.appendChild(row);
+      chatlog.scrollTop = chatlog.scrollHeight;
+    }
+    function fakeBotReply(userText) {
+      const reply = `You said: “${userText}”. This is a placeholder response.`;
+      appendMessage('bot', reply);
+    }
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      appendMessage('user', text);
+      input.value = '';
+      setTimeout(() => fakeBotReply(text), 300);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        form.dispatchEvent(new Event('submit'));
+      }
+    });
+  </script>
+</body>
+</html>
