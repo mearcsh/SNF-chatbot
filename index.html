@@ -4,8 +4,10 @@
   <meta charset="utf-8" />
   <title>SNF Utilization Review Chatbot</title>
   <!-- PyScript (runs Python in the browser via Pyodide) -->
-  <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css">
-  <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+  <!-- replace your existing PyScript includes with these two lines -->
+  <link rel="stylesheet" href="https://pyscript.net/releases/2024.6.2/core.css">
+  <script type="module" src="https://pyscript.net/releases/2024.6.2/core.js"></script>
+
 
   <style>
     body { font-family: system-ui, Arial, sans-serif; margin: 24px; background:#f8fafc; }
@@ -407,3 +409,4 @@ asyncio.ensure_future(run_chat())
   </py-script>
 </body>
 </html>
+
