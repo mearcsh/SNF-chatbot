@@ -1,63 +1,409 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>SNF Documentation Review Support Tool</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Make sure style.css is in the SAME folder as this file -->
-  <link rel="stylesheet" href="style.css" />
+  <title>SNF Utilization Review Chatbot</title>
+  <!-- PyScript (runs Python in the browser via Pyodide) -->
+  <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css">
+  <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 24px; background:#f8fafc; }
+    .app { max-width: 900px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: 1.6rem; }
+    .hint { color:#475569; margin: 4px 0 16px; }
+    .panel { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px; }
+    #console { height: 420px; overflow: auto; background:#0b1021; color:#e6edf3; padding:12px; border-radius:8px; white-space:pre-wrap; }
+    .row { display:flex; gap:8px; margin-top:10px; }
+    .row input[type="text"]{ flex:1; padding:10px; border-radius:8px; border:1px solid #cbd5e1; font-size:1rem; }
+    button { padding:10px 14px; border-radius:8px; border:1px solid #0f172a; background:#111827; color:#fff; cursor:pointer; }
+    button.secondary { background:#334155; border-color:#1f2937; }
+    .small { font-size: 0.9rem; color:#64748b; margin-top:6px; }
+    .spacer { height: 10px; }
+  </style>
 </head>
 <body>
-  <main class="container">
-    <header class="header">
-      <h1>SNF Documentation Review Support Tool</h1>
-      <p class="subtitle">Demo chat UI (placeholder bot replies)</p>
-    </header>
+  <div class="app">
+    <h1>SNF Utilization Review Chatbot</h1>
+    <div class="hint">Runs entirely in your browser via PyScript. Use <em>ur</em>, <em>utilization review</em>, <em>snf</em>, or similar to start the review.</div>
 
-    <section id="chatlog" class="chatlog" aria-live="polite" aria-label="Chat transcript"></section>
+    <div class="panel">
+      <div id="console" aria-live="polite"></div>
 
-    <form id="chatForm" class="composer" autocomplete="off">
-      <input id="userInput" class="input" type="text" placeholder="Type a message..." aria-label="Your message" />
-      <button class="send" type="submit" aria-label="Send message">Send</button>
-    </form>
-  </main>
+      <div class="row">
+        <input id="userInput" type="text" placeholder="Type your response here… (y/n, numbers, or a choice)" />
+        <button id="submitBtn">Submit</button>
+        <button id="startBtn" class="secondary">Start / Restart</button>
+      </div>
+      <div class="small">Tip: press <kbd>Enter</kbd> to submit.</div>
+    </div>
+  </div>
 
-  <script>
-    const chatlog = document.getElementById('chatlog');
-    const form = document.getElementById('chatForm');
-    const input = document.getElementById('userInput');
+  <!-- Your Python runs here -->
+  <py-script>
+import asyncio
+from js import document, window
+from pyodide.ffi import create_proxy
 
-    function escapeHtml(str) {
-      return str.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-    }
-    function appendMessage(role, text) {
-      const row = document.createElement('div');
-      row.className = `row ${role === 'user' ? 'right' : 'left'}`;
-      const bubble = document.createElement('div');
-      bubble.className = `bubble ${role}`;
-      bubble.innerHTML = `<div class="label">${role === 'user' ? 'You' : 'Bot'}</div><div class="text">${escapeHtml(text)}</div>`;
-      row.appendChild(bubble);
-      chatlog.appendChild(row);
-      chatlog.scrollTop = chatlog.scrollHeight;
-    }
-    function fakeBotReply(userText) {
-      const reply = `You said: “${userText}”. This is a placeholder response.`;
-      appendMessage('bot', reply);
-    }
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const text = input.value.trim();
-      if (!text) return;
-      appendMessage('user', text);
-      input.value = '';
-      setTimeout(() => fakeBotReply(text), 300);
-    });
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        form.dispatchEvent(new Event('submit'));
-      }
-    });
-  </script>
+# -------------------- UI Wiring --------------------
+console_el = document.getElementById("console")
+input_el   = document.getElementById("userInput")
+submit_btn = document.getElementById("submitBtn")
+start_btn  = document.getElementById("startBtn")
+
+_input_future = None
+
+def _write(text: str = ""):
+    console_el.textContent += (text + "\n")
+    console_el.scrollTop = console_el.scrollHeight
+
+def _prompt(prompt: str):
+    # show prompt and ready input
+    _write(prompt)
+    input_el.value = ""
+    input_el.focus()
+
+async def input_async(prompt: str) -> str:
+    """Async replacement for input()."""
+    global _input_future
+    _prompt(prompt)
+    # create a fresh future and wait for submit
+    loop = asyncio.get_event_loop()
+    _input_future = loop.create_future()
+    val = await _input_future
+    return val
+
+def _on_submit(event=None):
+    global _input_future
+    val = input_el.value.strip()
+    # echo the answer to console
+    _write("> " + val)
+    if _input_future and not _input_future.done():
+        _input_future.set_result(val)
+
+def _on_keypress(event):
+    # submit on Enter
+    if event.key == "Enter":
+        _on_submit(event)
+
+submit_btn.addEventListener("click", create_proxy(_on_submit))
+input_el.addEventListener("keypress", create_proxy(_on_keypress))
+
+# -------------------- Helpers (async versions) --------------------
+async def yn(prompt: str) -> bool:
+    while True:
+        ans = (await input_async(prompt + " (y/n):")).lower()
+        if ans in ("y", "yes"): return True
+        if ans in ("n", "no"):  return False
+        _write("Please answer with 'y' or 'n'.")
+
+async def one_of(prompt: str, options: tuple[str, ...]) -> str:
+    opts = "/".join(options)
+    while True:
+        ans = (await input_async(f"{prompt} [{opts}]:")).lower()
+        if ans in options: return ans
+        _write(f"Please choose one of: {opts}")
+
+async def numeric(prompt: str, min_val: int = 0, max_val: int = 100) -> int:
+    while True:
+        ans = await input_async(f"{prompt} (number {min_val}-{max_val}):")
+        try:
+            v = int(ans)
+            if min_val <= v <= max_val: return v
+        except ValueError:
+            pass
+        _write(f"Enter a number between {min_val} and {max_val}.")
+
+# -------------------- Domain Model --------------------
+from dataclasses import dataclass
+
+@dataclass
+class CaseInputs:
+    # Therapy
+    therapy_days_per_week: int
+    therapy_disciplines: int
+    progress_rate: str                # "clear", "limited", "none"
+    safe_home_access_in_reasonable_time: bool
+    barriers_access: bool
+    barriers_dme: bool
+    barriers_cognition: bool
+    barriers_behavior: bool
+    barriers_caregiver_availability: bool
+    barriers_financial: bool
+    # Nursing
+    daily_rn_required: bool
+    daily_tasks_not_safe_at_home: bool
+    med_complexity: str               # "high", "moderate", "low"
+    wound_care_daily: bool
+    iv_or_enteral_daily: bool
+    neuro_resp_airway_daily: bool
+    # Safety & context
+    medical_stability: str            # "unstable", "borderline", "stable"
+    safety_risk: str                  # "high", "moderate", "low"
+    # Discharge planning
+    discharge_target: str             # "home", "alf", "ltc", "unsure"
+    home_support_level: str           # "high", "medium", "low"
+    home_accessibility: str           # "good", "partial", "poor"
+    caregiver_available: bool
+    dme_available: bool
+    # Timing/exception
+    week_of_stay: int
+    sudden_change_in_plan: bool
+
+def detect_intent(user_text: str) -> str:
+    t = user_text.lower()
+    return "ur_snf" if any(k in t for k in [
+        "utilization review","chapter 8","skilled nursing facility",
+        "continued stay","medical director","nomnc","snf coverage","medicare","ur","snf"
+    ]) else "other"
+
+# -------------------- Decision Logic (same as your .py, non-interactive) --------------------
+def coverage_decision(ci: CaseInputs) -> dict[str, str]:
+    rationale = []
+    decision = "Pend"
+
+    # Skilled therapy rule (>=5 days, >=1 discipline, progress)
+    skilled_therapy = False
+    if ci.therapy_days_per_week >= 5 and ci.therapy_disciplines >= 1:
+        if ci.progress_rate in ("clear","limited"):
+            skilled_therapy = True
+            rationale.append(
+                f"Therapy meets threshold: {ci.therapy_days_per_week} d/wk, "
+                f"{ci.therapy_disciplines} discipline(s), progress={ci.progress_rate}."
+            )
+        else:
+            rationale.append("Therapy at daily frequency but no measurable progress documented.")
+    else:
+        rationale.append("Therapy below daily-frequency threshold (<5 d/wk) or no active discipline.")
+
+    # Skilled nursing
+    skilled_nursing = False
+    if ci.daily_rn_required:
+        bits = []
+        if ci.wound_care_daily: bits.append("daily complex wound care")
+        if ci.iv_or_enteral_daily: bits.append("daily IV/enteral regimen")
+        if ci.neuro_resp_airway_daily: bits.append("daily neuro/airway management")
+        if bits:
+            skilled_nursing = True
+            rationale.append("RN daily required due to " + ", ".join(bits) + ".")
+        elif ci.med_complexity == "high":
+            skilled_nursing = True
+            rationale.append("High medication complexity requiring daily RN assessment.")
+        else:
+            rationale.append("Daily RN claimed but lacks qualifying daily skilled components.")
+    else:
+        if ci.med_complexity == "high" and ci.safety_risk == "high":
+            rationale.append("High med complexity with high safety risk—consider increasing RN frequency.")
+        else:
+            rationale.append("No daily RN need identified.")
+
+    # Safety overlay
+    if ci.medical_stability in ("unstable","borderline") or ci.safety_risk == "high":
+        rationale.append("Acuity/safety risk elevates need for daily skilled oversight.")
+
+    # Barriers (coerced ints)
+    major_barriers = sum([
+        1 if ci.barriers_access else 0,
+        1 if ci.barriers_dme else 0,
+        1 if ci.barriers_cognition else 0,
+        1 if ci.barriers_behavior else 0,
+        1 if ci.barriers_caregiver_availability else 0,
+        1 if ci.barriers_financial else 0,
+    ])
+    if not ci.safe_home_access_in_reasonable_time:
+        rationale.append(f"Member not likely to reach safe home soon; {major_barriers} barrier(s) identified.")
+        if (ci.home_support_level == "low" or ci.med_complexity == "high" or
+            ci.barriers_cognition or major_barriers >= 2):
+            rationale.append("Elevated consideration for LTC placement due to barriers/support limits.")
+
+    # Coverage fork
+    if skilled_therapy or skilled_nursing:
+        if ci.medical_stability in ("unstable","borderline") or ci.safety_risk == "high":
+            if skilled_therapy and ci.progress_rate == "none":
+                decision = "Short Continuation with focused plan revision"
+                rationale.append("No therapy progress—revise goals/interventions; reassess soon.")
+            else:
+                decision = "Continue SNF coverage"
+                rationale.append("Daily skilled need + risk/acuity justify continuation.")
+        else:
+            if skilled_therapy and ci.progress_rate == "clear":
+                decision = "Continue SNF coverage"
+                rationale.append("Clear measurable progress at skilled intensity.")
+            elif skilled_therapy and ci.progress_rate == "limited":
+                decision = "Short Continuation with time-bound goals"
+                rationale.append("Limited progress—tighten goals/frequency; set reassessment window.")
+            elif skilled_nursing and ci.daily_tasks_not_safe_at_home:
+                decision = "Continue SNF coverage"
+                rationale.append("Daily skilled nursing tasks not safely performed at home.")
+            else:
+                dp_only_window = (ci.week_of_stay == 1) or ci.sudden_change_in_plan
+                if dp_only_window:
+                    when = "week 1" if ci.week_of_stay == 1 else "due to sudden change in plan"
+                    decision = "Short Continuation to finalize safe discharge plan"
+                    rationale.append(f"Discharge-planning allowance ({when}); finalize supports/DME/logistics.")
+                else:
+                    decision = "Recommend send case to Medical Director"
+                    rationale.append("Discharge planning need outside week-1 window and no sudden change.")
+    else:
+        decision = "Recommend send case to Medical Director"
+        rationale.append("No qualifying daily skilled therapy/nursing need found.")
+
+    return {"decision": decision, "rationale": "; ".join(rationale)}
+
+def discharge_plan(ci: CaseInputs) -> dict[str, list[str]]:
+    plan = []
+    t = ci.discharge_target
+    if t == "home":
+        plan.append("Target: Home with services.")
+    elif t == "alf":
+        plan.append("Target: Assisted Living Facility.")
+    elif t == "ltc":
+        plan.append("Target: Long-Term Care facility.")
+    else:
+        plan.append("Discharge target unclear—please specify: home / ALF / LTC.")
+
+    if t == "home":
+        if ci.home_support_level == "high":
+            plan.append("Initiate caregiver training (transfers, meds, wound care as relevant).")
+            if ci.home_accessibility in ("good","partial") and ci.dme_available:
+                plan.append("Start Home Health (RN/PT/OT as indicated); confirm DME fit & safety.")
+            else:
+                plan.append("Address access gaps (ramps/grab bars); expedite DME delivery.")
+        elif ci.home_support_level == "medium":
+            plan.append("Add paid caregivers (4–8 hrs/day) and Home Health services.")
+            if ci.med_complexity == "high":
+                plan.append("Schedule RN visits 2–3x/week for med management/safety checks.")
+        elif ci.home_support_level == "low":
+            if ci.home_accessibility == "good" and ci.caregiver_available:
+                plan.append("Price 8–24 hrs/day paid caregiving; consider respite for ramp-up.")
+            else:
+                plan.append("Home support/access limited—consider ALF trial or short rehab extension.")
+
+        if not ci.safe_home_access_in_reasonable_time:
+            barrier_notes = []
+            if ci.barriers_access: barrier_notes.append("home access")
+            if ci.barriers_dme: barrier_notes.append("DME")
+            if ci.barriers_cognition: barrier_notes.append("cognition")
+            if ci.barriers_behavior: barrier_notes.append("behavior")
+            if ci.barriers_caregiver_availability: barrier_notes.append("caregiver availability")
+            if ci.barriers_financial: barrier_notes.append("financial")
+            if barrier_notes:
+                plan.append("Barriers delaying home: " + ", ".join(barrier_notes) + ".")
+            if (ci.home_support_level == "low" or ci.med_complexity == "high" or ci.barriers_cognition
+                or len(barrier_notes) >= 2):
+                plan.append("Increase consideration of LTC placement; evaluate ALF vs LTC based on needs.")
+        plan.append("Recommend Home Health to support safe transition and reinforce training.")
+
+    elif t == "alf":
+        if ci.med_complexity in ("low","moderate"):
+            plan.append("Confirm ALF can manage meds/ADLs; arrange PT/OT on arrival as needed.")
+        else:
+            plan.append("High med complexity—validate ALF capability or consider LTC.")
+    elif t == "ltc":
+        if ci.med_complexity == "high" or ci.home_support_level == "low":
+            plan.append("LTC appropriate for ongoing nursing coverage and ADL support.")
+        else:
+            plan.append("If support improves and access is good, reconsider ALF or supported home.")
+    else:
+        plan.append("Share support level, accessibility, DME status to tailor the plan.")
+    return {"plan": plan}
+
+# -------------------- Async Chat Flow --------------------
+async def run_chat():
+    _write("Welcome to the Utilization Review support chatbot! How may I assist today?")
+    first = (await input_async("> ")).strip()
+    intent = detect_intent(first)
+
+    if intent != "ur_snf":
+        _write("Thanks for reaching out! This assistant focuses on SNF utilization review and discharge planning.")
+        if await yn("Would you still like to use this chatbot?"):
+            _write("\nOkay, let's restart.")
+            _write("💡 Consider using phrases like 'ur', 'utilization review', or 'snf' to initiate utilization review support.")
+            return await run_chat()
+        else:
+            _write("No problem. Goodbye!")
+            return
+
+    _write("Great—let's review continued SNF need under Medicare Chapter 8.")
+    _write("I’ll ask about therapy, nursing, safety, timing, and discharge planning.")
+
+    week_of_stay = await numeric("What week of the SNF stay is this? (1 = first week)", 1, 26)
+    sudden_change = await yn("Was there a sudden change in the discharge plan later in the stay?")
+
+    t_days = await numeric("How many days per week of skilled therapy (PT/OT/SLP) does the member receive?", 0, 7)
+    t_disc = await numeric("How many therapy disciplines are active? (0-3)", 0, 3)
+    if t_days < 5 or t_disc < 1:
+        _write("⚠️  Warning: Therapy alone will not qualify for continued SNF coverage unless there are at least 5 days/week of one or more disciplines.")
+    prog = await one_of("Therapy progress noted?", ("clear","limited","none"))
+
+    home_time = await yn("Is the member likely to reach safe home access in a reasonable time?")
+    barriers_access = barriers_dme = barriers_cognition = barriers_behavior = False
+    barriers_caregiver_availability = barriers_financial = False
+    if not home_time:
+        _write("Understood. Let’s identify barriers preventing progress toward safe home:")
+        barriers_access = await yn("Barrier: home access (stairs/ramps/bathroom/layout)?")
+        barriers_dme = await yn("Barrier: DME availability/fit (e.g., hospital bed, walker)?")
+        barriers_cognition = await yn("Barrier: cognition/safety awareness?")
+        barriers_behavior = await yn("Barrier: behavior/impulsivity affecting safety?")
+        barriers_caregiver_availability = await yn("Barrier: caregiver availability/training?")
+        barriers_financial = await yn("Barrier: financial/coverage limiting supports?")
+
+    daily_rn = await yn("Are DAILY licensed nursing assessments/interventions required?")
+    not_safe_home = await yn("Are DAILY tasks being done that would NOT be safe at home (e.g., complex wound, IV, airway)?")
+    med_cx = await one_of("Medication complexity?", ("high","moderate","low"))
+    wound = await yn("Is DAILY complex wound care required?")
+    iv = await yn("Is DAILY IV or enteral management required?")
+    neuro = await yn("Is DAILY neuro/airway management (e.g., trach care, frequent neuro checks) required?")
+
+    stability = await one_of("Medical stability?", ("unstable","borderline","stable"))
+    risk = await one_of("Safety risk level?", ("high","moderate","low"))
+
+    target = await one_of("Preferred discharge target?", ("home","alf","ltc","unsure"))
+    support = await one_of("Home support level?", ("high","medium","low"))
+    access = await one_of("Home accessibility?", ("good","partial","poor"))
+    caregiver_avail = await yn("Is a family/support caregiver available at discharge?")
+    dme = await yn("Is DME (e.g., walker, hospital bed) available or ordered?")
+
+    case = CaseInputs(
+        therapy_days_per_week=t_days, therapy_disciplines=t_disc, progress_rate=prog,
+        safe_home_access_in_reasonable_time=home_time,
+        barriers_access=barriers_access, barriers_dme=barriers_dme, barriers_cognition=barriers_cognition,
+        barriers_behavior=barriers_behavior, barriers_caregiver_availability=barriers_caregiver_availability,
+        barriers_financial=barriers_financial, daily_rn_required=daily_rn,
+        daily_tasks_not_safe_at_home=not_safe_home, med_complexity=med_cx,
+        wound_care_daily=wound, iv_or_enteral_daily=iv, neuro_resp_airway_daily=neuro,
+        medical_stability=stability, safety_risk=risk, discharge_target=target,
+        home_support_level=support, home_accessibility=access, caregiver_available=caregiver_avail,
+        dme_available=dme, week_of_stay=week_of_stay, sudden_change_in_plan=sudden_change
+    )
+
+    cov = coverage_decision(case)
+    dcp = discharge_plan(case)
+
+    _write("\n--- Coverage Recommendation (Medicare Chapter 8) ---")
+    _write(f"Decision: {cov['decision']}")
+    _write(f"Rationale: {cov['rationale']}")
+
+    _write("\n--- Discharge Planning Guidance ---")
+    for line in dcp["plan"]:
+        _write("- " + line)
+
+    _write("\nSummary: " + (
+        "Not likely to reach safe home soon—barriers identified. Increase LTC consideration."
+        if not home_time else
+        ("Caregiver training strongly advised." if support in ("high","medium")
+         else "Explore paid caregiving or facility options.")
+    ))
+
+# Bind Start/Restart button to (re)start the chat
+def _start(event=None):
+    console_el.textContent = ""
+    asyncio.ensure_future(run_chat())
+
+start_btn.addEventListener("click", create_proxy(_start))
+
+# Auto-start on load (optional). Comment out next line if you prefer manual start.
+asyncio.ensure_future(run_chat())
+  </py-script>
 </body>
 </html>
